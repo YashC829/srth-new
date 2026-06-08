@@ -25,9 +25,9 @@ train:
   resume_checkpoint: null   # Optional checkpoint path to resume model/optimizer/scheduler state from.
 
 wandb:
-  project: surpass_debugging              # W&B project name.
-  entity: gbyrd3-johns-hopkins-university # W&B team / user namespace.
-  name: ll_policy_test_full_actions_scoring       # Human-readable run name.
+  project: diffusion_training              # W&B project name.
+  entity: ychadda1-johns-hopkins-university # W&B team / user namespace.
+  name: diffusion_training_test       # Human-readable run name.
 
   # resume settings
   resume: false        # Set true to restore config state from a previous W&B run.
