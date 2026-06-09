@@ -16,9 +16,9 @@ ll_future_chunk_size: 60
 
 
 train:
-  num_train_steps: 500000
+  num_train_steps: 1000  # orig is 500000
   num_warmup_steps: 50000
-  save_every: 10000            # Save a checkpoint every N training steps.
+  save_every: 500            # Save a checkpoint every N training steps. orig is 10000
   keep_every: 50000            # Prune checkpoints so only one representative checkpoint survives per bin.
   validate_every: 1000         # Run the validation loop every N training steps.
   checkpoint_dir: ${hydra:runtime.output_dir}/checkpoints
