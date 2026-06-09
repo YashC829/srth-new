@@ -1,4 +1,4 @@
-repo_id: surpass/cholecystectomy
+repo_id: /mnt/sda1/surpass_data/.hf/lerobot/surpass/cholecystectomy  #orig is surpass/cholecystectomy
 
 tissue_sample_ids_train:
   [
