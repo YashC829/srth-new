@@ -17,12 +17,18 @@ from srth_new.low_level_policy.dataset.img_aug import ImageAug
 from srth_new.low_level_policy.models.detr.models.backbone import build_image_backbone
 from srth_new.low_level_policy.models.detr.models.detr_vae_utils import build_encoder
 from srth_new.low_level_policy.models.detr.models.transformer import build_transformer
-from srth_new.low_level_policy.models.detr.models.detr_vae import DETRVAE
+#from srth_new.low_level_policy.models.detr.models.detr_vae import DETRVAE
+
+from diffusers import DDPMScheduler
+from lerobot.common.policies.diffusion.modeling_diffusion import (
+    DiffusionConditionalUnet1d,
+)
+
 from srth_new.low_level_policy.models.dvrk_policy import DVRKPolicy
 
 log = logging.getLogger(__name__)
 
-
+'''
 def kl_divergence(mu, logvar):
     batch_size = mu.size(0)
     assert batch_size != 0
@@ -37,7 +43,7 @@ def kl_divergence(mu, logvar):
     mean_kld = klds.mean(1).mean(0, True)
 
     return total_kld, dimension_wise_kld, mean_kld
-
+'''
 
 class DiffusionPolicy(DVRKPolicy):
     """ACT policy wrapper with optional depth and action-history conditioning.
@@ -95,7 +101,7 @@ class DiffusionPolicy(DVRKPolicy):
         )
 
         self.img_resize_cfg = img_resize_cfg
-        self.kl_weight = kl_weight
+        #self.kl_weight = kl_weight
         self.state_dim = action_dim
         self.use_language = use_language
         self.language_encoder = language_encoder
@@ -123,7 +129,7 @@ class DiffusionPolicy(DVRKPolicy):
 
         transformer = build_transformer(transformer_cfg)
         encoder = build_encoder(encoder_cfg)
-
+        '''
         self.model = DETRVAE(
             backbones=img_backbones,
             transformer=transformer,
@@ -138,6 +144,16 @@ class DiffusionPolicy(DVRKPolicy):
             history_num_heads=history_num_heads,
             use_language=use_language,
             use_film="film" in img_backbone_cfg.backbone_type,
+        )
+        '''
+
+        self.noise_predictor = DiffusionConditionalUnet1d(
+            input_dim=action_dim,
+            global_cond_dim=cond_dim,
+        )
+        self.noise_scheduler = DDPMScheduler(
+            num_train_timesteps=100,
+            beta_schedule="squaredcos_cap_v2",
         )
 
         self.optimizer = torch.optim.AdamW(
@@ -162,7 +178,7 @@ class DiffusionPolicy(DVRKPolicy):
             )
             self.language_model.eval()
 
-        log.info(f"KL Weight {self.kl_weight}")
+        #log.info(f"KL Weight {self.kl_weight}")
         self.num_queries = self.model.num_queries  # type: ignore
 
     def _build_img_aug_dict(self, cfg: DictConfig):
@@ -530,6 +546,7 @@ class DiffusionPolicy(DVRKPolicy):
             processed_actions = processed_actions[:, : self.num_queries]
             action_is_pad = action_is_pad[:, : self.num_queries]
 
+            '''
             a_hat, is_pad_hat, (mu, logvar) = self.model(
                 qpos=model_qpos,
                 image_stack=rgb_img_stack,
@@ -541,7 +558,39 @@ class DiffusionPolicy(DVRKPolicy):
                 history=processed_history,
                 history_is_pad=action_history_is_pad,
             )
+            '''
+            obs_cond = self.encode_observation(
+                rgb_img_stack,
+                depth_img,
+                command_embedding,
+                processed_history,
+            )
+            noise = torch.randn_like(processed_actions)
+            timesteps = torch.randint(
+                0,
+                self.noise_scheduler.config.num_train_timesteps,
+                (batch_size,),
+                device=processed_actions.device,
+            )
+            noisy_actions = self.noise_scheduler.add_noise(
+                processed_actions,
+                noise,
+                timesteps,
+            )
 
+            noise_pred = self.noise_predictor(
+                sample=noisy_actions,
+                timestep=timesteps,
+                global_cond=obs_cond,
+            )
+
+            loss = F.mse_loss(
+                noise_pred,
+                noise,
+            )
+
+
+            '''
             total_kld, dim_wise_kld, mean_kld = kl_divergence(mu, logvar)
 
             loss_dict = {}
@@ -553,8 +602,14 @@ class DiffusionPolicy(DVRKPolicy):
             loss_dict["loss"] = loss_dict["l1"] + loss_dict["kl"] * self.kl_weight
 
             return loss_dict
+            '''
+            return {
+                "loss": loss,
+                "diffusion_loss": loss,
+            }
 
         # Inference.
+        '''
         a_hat, _, (_, _) = self.model(
             qpos=model_qpos,
             image_stack=rgb_img_stack,
@@ -564,6 +619,31 @@ class DiffusionPolicy(DVRKPolicy):
             history=processed_history,
             history_is_pad=action_history_is_pad,
         )
+        '''
+        actions = torch.randn(
+            batch_size,
+            self.num_queries,
+            self.action_dim,
+            device=rgb_img_stack.device,
+        )
+
+        obs_cond = self.encode_observation(...)
+        self.noise_scheduler.set_timesteps(50)
+
+        for t in self.noise_scheduler.timesteps:
+            noise_pred = self.noise_predictor(
+                sample=actions,
+                timestep=t,
+                global_cond=obs_cond,
+            )
+
+            actions = self.noise_scheduler.step(
+                noise_pred,
+                t,
+                actions,
+            ).prev_sample
+
+        a_hat = actions
 
         if return_policy_actions:
             return a_hat
