@@ -20,9 +20,10 @@ from srth_new.low_level_policy.models.detr.models.transformer import build_trans
 #from srth_new.low_level_policy.models.detr.models.detr_vae import DETRVAE
 
 from diffusers import DDPMScheduler
-from lerobot.common.policies.diffusion.modeling_diffusion import (
+from lerobot.policies.diffusion.modeling_diffusion import (
     DiffusionConditionalUnet1d,
 )
+from lerobot.policies.diffusion.configuration_diffusion import DiffusionConfig
 
 from srth_new.low_level_policy.models.dvrk_policy import DVRKPolicy
 
@@ -116,7 +117,7 @@ class DiffusionPolicy(DVRKPolicy):
 
 
         self.noise_predictor = DiffusionConditionalUnet1d( # initialize the diffusion model
-            input_dim=action_dim,
+            config=DiffusionConfig(),
             global_cond_dim=256, # based on Detrvae init code
         )
         self.noise_scheduler = DDPMScheduler(
