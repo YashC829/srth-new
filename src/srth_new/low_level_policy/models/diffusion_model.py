@@ -91,6 +91,7 @@ class DiffusionPolicy(DVRKPolicy):
         )
 
         self.img_resize_cfg = img_resize_cfg
+        self.camera_names = camera_names
         #self.kl_weight = kl_weight
         self.state_dim = action_dim
         self.use_language = use_language
@@ -143,6 +144,7 @@ class DiffusionPolicy(DVRKPolicy):
             )
         }
 
+        print("backbone type: ", img_backbone_cfg.backbone_type)
         '''
         print("diffusion config type: ", type(diffusion_cfg))
         print(diffusion_cfg)
@@ -186,18 +188,32 @@ class DiffusionPolicy(DVRKPolicy):
         #self.num_queries = self.model.num_queries  # type: ignore
         self.num_queries = num_queries
 
-    def encode_observation(self, endoscope_img, lw_img, rw_img):
+    def _forward_backbone(self, backbone, image, command_embedding):
+        if self.use_film:
+            features, pos = backbone(image, command_embedding)
+        else:
+            features, pos = backbone(image)
+
+        return features[0], pos[0]
+
+
+    def encode_observation(self, rgb_img_stack, depth_img, command_embedding):
         feats = []
 
-        for cam_id, img in enumerate([endoscope_img, lw_img, rw_img]):
-            features, pos = self.backbones[cam_id](img)
-            features = self.input_proj(features[0])
+        for cam_id in range(len(self.camera_names)):
+            features, pos = self._forward_backbone(
+                self.backbones[cam_id],
+                rgb_img_stack[:, cam_id],
+                command_embedding,
+            )
+            features = self.input_proj(features)
+
             pooled = self.obs_pool(features)
             pooled = pooled.flatten(1)
+
             feats.append(pooled)
 
         obs_cond = torch.cat(feats, dim=-1)
-
         return obs_cond
 
     def _build_img_aug_dict(self, cfg: DictConfig):
