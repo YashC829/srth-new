@@ -20,12 +20,15 @@ from srth_new.low_level_policy.models.detr.models.transformer import build_trans
 #from srth_new.low_level_policy.models.detr.models.detr_vae import DETRVAE
 
 from diffusers import DDPMScheduler
-from lerobot.policies.diffusion.modeling_diffusion import (
-    DiffusionConditionalUnet1d,
-)
+from lerobot.configs.types import PolicyFeature
+from lerobot.configs.types import FeatureType
+from lerobot.policies.diffusion.modeling_diffusion import DiffusionConditionalUnet1d
 from lerobot.policies.diffusion.configuration_diffusion import DiffusionConfig
+from lerobot.policies.diffusion import processor_diffusion
 
 from srth_new.low_level_policy.models.dvrk_policy import DVRKPolicy
+
+from types import SimpleNamespace
 
 log = logging.getLogger(__name__)
 
@@ -115,9 +118,30 @@ class DiffusionPolicy(DVRKPolicy):
         transformer = build_transformer(transformer_cfg)
         encoder = build_encoder(encoder_cfg)
 
+        PolicyFeature( # create policy feature with action feature - unet requires an initialized action feature
+            type=FeatureType.ACTION,
+            shape=(16,)
+        )
+        diffusion_cfg = DiffusionConfig(
+            horizon=64,
+            n_action_steps=64,
+        )
+        diffusion_cfg.output_features = {
+            "action": PolicyFeature(
+                type=FeatureType.ACTION,
+                shape=(action_dim,)
+            )
+        }
+
+        '''
+        print("diffusion config type: ", type(diffusion_cfg))
+        print(diffusion_cfg)
+        print(hasattr(diffusion_cfg, "action_feature"))
+        print(diffusion_cfg.action_feature)
+        '''
 
         self.noise_predictor = DiffusionConditionalUnet1d( # initialize the diffusion model
-            config=DiffusionConfig(),
+            config=diffusion_cfg,
             global_cond_dim=256, # based on Detrvae init code
         )
         self.noise_scheduler = DDPMScheduler(
@@ -126,7 +150,7 @@ class DiffusionPolicy(DVRKPolicy):
         )
 
         self.optimizer = torch.optim.AdamW(
-            self._get_param_dict(self.model, img_backbone_cfg),
+            self._get_param_dict(self.noise_predictor, img_backbone_cfg),
             lr=lr,
             weight_decay=weight_decay,
         )
@@ -148,7 +172,9 @@ class DiffusionPolicy(DVRKPolicy):
             self.language_model.eval()
 
         #log.info(f"KL Weight {self.kl_weight}")
-        self.num_queries = self.model.num_queries  # type: ignore
+
+        #self.num_queries = self.model.num_queries  # type: ignore
+        self.num_queries = num_queries
 
     def _build_img_aug_dict(self, cfg: DictConfig):
         aug_dict = {}
