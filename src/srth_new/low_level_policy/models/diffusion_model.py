@@ -6,6 +6,8 @@ from omegaconf import DictConfig, OmegaConf
 from torch.nn import functional as F
 from torchvision import transforms
 
+import torch.nn as nn
+
 from srth_new.general.third_party.EndoSynth.endosynth.models import (
     load as load_depth_model,
 )
@@ -110,6 +112,14 @@ class DiffusionPolicy(DVRKPolicy):
         for _ in range(len(camera_names)):
             img_backbone = build_image_backbone(**img_backbone_cfg)  # type: ignore
             img_backbones.append(img_backbone)
+        self.backbones = nn.ModuleList(img_backbones) # to get image features
+
+        self.input_proj = nn.Conv2d(
+            img_backbones[0].num_channels,
+            256, # the ACT default
+            kernel_size=1,
+        )
+        self.obs_pool = nn.AdaptiveAvgPool2d((1, 1))
 
         depth_backbone = (
             build_image_backbone(**img_backbone_cfg) if self.use_depth else None
@@ -175,6 +185,20 @@ class DiffusionPolicy(DVRKPolicy):
 
         #self.num_queries = self.model.num_queries  # type: ignore
         self.num_queries = num_queries
+
+    def encode_observation(self, endoscope_img, lw_img, rw_img):
+        feats = []
+
+        for cam_id, img in enumerate([endoscope_img, lw_img, rw_img]):
+            features, pos = self.backbones[cam_id](img)
+            features = self.input_proj(features[0])
+            pooled = self.obs_pool(features)
+            pooled = pooled.flatten(1)
+            feats.append(pooled)
+
+        obs_cond = torch.cat(feats, dim=-1)
+
+        return obs_cond
 
     def _build_img_aug_dict(self, cfg: DictConfig):
         aug_dict = {}
@@ -546,7 +570,7 @@ class DiffusionPolicy(DVRKPolicy):
                 rgb_img_stack,
                 depth_img,
                 command_embedding,
-                processed_history,
+               # processed_history,
             )
             noise = torch.randn_like(processed_actions)
             timesteps = torch.randint(
