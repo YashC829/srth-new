@@ -19,7 +19,7 @@ from srth_new.low_level_policy.dataset.img_aug import ImageAug
 from srth_new.low_level_policy.models.detr.models.backbone import build_image_backbone
 from srth_new.low_level_policy.models.detr.models.detr_vae_utils import build_encoder
 from srth_new.low_level_policy.models.detr.models.transformer import build_transformer
-#from srth_new.low_level_policy.models.detr.models.detr_vae import DETRVAE
+from srth_new.low_level_policy.models.detr.models.detr_vae import DETRVAE
 
 from diffusers import DDPMScheduler
 from lerobot.configs.types import PolicyFeature
@@ -100,6 +100,7 @@ class DiffusionPolicy(DVRKPolicy):
         self.use_history = use_history
         self.history_chunk_size = history_chunk_size
         self.use_history = history_chunk_size > 0
+        self.use_film = True
 
         # Build image augmentation pipeline.
         self.img_aug_dict = self._build_img_aug_dict(img_aug_cfg)
@@ -603,7 +604,7 @@ class DiffusionPolicy(DVRKPolicy):
             )
 
             noise_pred = self.noise_predictor( # diffusion model outputs noise prediction
-                sample=noisy_actions,
+                x=noisy_actions,
                 timestep=timesteps,
                 global_cond=obs_cond,
             )
