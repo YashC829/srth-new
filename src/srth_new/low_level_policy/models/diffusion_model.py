@@ -130,6 +130,7 @@ class DiffusionPolicy(DVRKPolicy):
         transformer = build_transformer(transformer_cfg)
         encoder = build_encoder(encoder_cfg)
 
+        #print(dir(DETRVAE))
         PolicyFeature( # create policy feature with action feature - unet requires an initialized action feature
             type=FeatureType.ACTION,
             shape=(16,)
@@ -155,7 +156,7 @@ class DiffusionPolicy(DVRKPolicy):
 
         self.noise_predictor = DiffusionConditionalUnet1d( # initialize the diffusion model
             config=diffusion_cfg,
-            global_cond_dim=256, # based on Detrvae init code
+            global_cond_dim=768, # same as obs_cond.shape[1]
         )
         self.noise_scheduler = DDPMScheduler(
             num_train_timesteps=100,
@@ -189,6 +190,7 @@ class DiffusionPolicy(DVRKPolicy):
         #self.num_queries = self.model.num_queries  # type: ignore
         self.num_queries = num_queries
 
+    '''
     def _forward_backbone(self, backbone, image, command_embedding):
         if self.use_film:
             features, pos = backbone(image, command_embedding)
@@ -196,17 +198,26 @@ class DiffusionPolicy(DVRKPolicy):
             features, pos = backbone(image)
 
         return features[0], pos[0]
-
+    '''
 
     def encode_observation(self, rgb_img_stack, depth_img, command_embedding):
         feats = []
 
         for cam_id in range(len(self.camera_names)):
+            features, pos = DETRVAE._forward_backbone(
+                self,
+                self.backbones[cam_id],
+                rgb_img_stack[:, cam_id],
+                command_embedding,
+            )
+
+            '''
             features, pos = self._forward_backbone(
                 self.backbones[cam_id],
                 rgb_img_stack[:, cam_id],
                 command_embedding,
             )
+            '''
             features = self.input_proj(features)
 
             pooled = self.obs_pool(features)
@@ -589,6 +600,8 @@ class DiffusionPolicy(DVRKPolicy):
                 command_embedding,
                # processed_history,
             )
+            #print("obs_cond shape:", obs_cond.shape)
+
             noise = torch.randn_like(processed_actions)
             timesteps = torch.randint(
                 0,
@@ -602,6 +615,7 @@ class DiffusionPolicy(DVRKPolicy):
                 noise,
                 timesteps,
             )
+
 
             noise_pred = self.noise_predictor( # diffusion model outputs noise prediction
                 x=noisy_actions,
