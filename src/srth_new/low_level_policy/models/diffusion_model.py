@@ -137,6 +137,7 @@ class DiffusionPolicy(DVRKPolicy):
             horizon=64,
             n_action_steps=60,
             n_obs_steps=1,
+            do_mask_loss_for_padding=True,
             output_features={
                 "action": PolicyFeature(type=FeatureType.ACTION, shape=(action_dim,)) # unet requires an initialized action feature
             }
@@ -163,7 +164,7 @@ class DiffusionPolicy(DVRKPolicy):
         )
 
         self.optimizer = torch.optim.AdamW(
-            self._get_param_dict(self.noise_predictor, img_backbone_cfg),
+            self._get_param_dict(self, img_backbone_cfg), # to use backbones and input proj params
             lr=lr,
             weight_decay=weight_decay,
         )
@@ -586,12 +587,12 @@ class DiffusionPolicy(DVRKPolicy):
                 current_pose, action, action_is_pad
             )
             processed_actions = processed_actions[:, : self.num_queries]
-            print("processed actions:", processed_actions.shape)
+            #print("processed actions:", processed_actions.shape)
 
 
             action_is_pad = action_is_pad[:, : self.num_queries]
             action_is_pad = F.pad(action_is_pad, (0, 4), value=True)  # (12, 60) -> (12, 64), last 4 always masked
-            print("action_is_pad:", action_is_pad.shape)
+            #print("action_is_pad:", action_is_pad.shape)
             actions_padded = F.pad(processed_actions, (0, 0, 0, 4))  # (12, 60, 20) -> (12, 64, 20)
             #print("padded actions:", actions_padded.shape)
 
@@ -601,7 +602,7 @@ class DiffusionPolicy(DVRKPolicy):
                 command_embedding,
                # processed_history,
             )
-            print("obs_cond shape:", obs_cond.shape)
+            #print("obs_cond shape:", obs_cond.shape)
 
             # replace processed_actions with actions_padded
             noise = torch.randn_like(actions_padded)
@@ -617,7 +618,7 @@ class DiffusionPolicy(DVRKPolicy):
                 noise,
                 timesteps,
             )
-            print("noisy actions shape:", noisy_actions.shape)
+            #print("noisy actions shape:", noisy_actions.shape)
 
             noise_pred = self.noise_predictor.forward( # diffusion model outputs noise prediction
                 x=noisy_actions,
@@ -628,7 +629,11 @@ class DiffusionPolicy(DVRKPolicy):
             loss = F.mse_loss(
                 noise_pred,
                 noise,
+                reduction="none"
             )
+            in_episode_bound = ~action_is_pad # to exclude the 4 padded steps
+            loss = (loss * in_episode_bound.unsqueeze(-1)).mean()
+
             return {
                 "loss": loss,
                 "diffusion_loss": loss,
