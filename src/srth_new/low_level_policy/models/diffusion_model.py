@@ -131,10 +131,12 @@ class DiffusionPolicy(DVRKPolicy):
         encoder = build_encoder(encoder_cfg)
 
         #print(dir(DETRVAE))
+        #print("history chunk size:", self.history_chunk_size)
 
         diffusion_cfg = DiffusionConfig(
             horizon=64,
-            n_action_steps=64,
+            n_action_steps=60,
+            n_obs_steps=1,
             output_features={
                 "action": PolicyFeature(type=FeatureType.ACTION, shape=(action_dim,)) # unet requires an initialized action feature
             }
@@ -186,6 +188,8 @@ class DiffusionPolicy(DVRKPolicy):
 
         #self.num_queries = self.model.num_queries  # type: ignore
         self.num_queries = num_queries
+        #print("num queries:", num_queries)
+
 
     '''
     def _forward_backbone(self, backbone, image, command_embedding):
@@ -208,13 +212,6 @@ class DiffusionPolicy(DVRKPolicy):
                 command_embedding,
             )
 
-            '''
-            features, pos = self._forward_backbone(
-                self.backbones[cam_id],
-                rgb_img_stack[:, cam_id],
-                command_embedding,
-            )
-            '''
             features = self.input_proj(features)
 
             pooled = self.obs_pool(features)
@@ -589,9 +586,14 @@ class DiffusionPolicy(DVRKPolicy):
                 current_pose, action, action_is_pad
             )
             processed_actions = processed_actions[:, : self.num_queries]
-            print("processed actions:", processed_actions)
+            print("processed actions:", processed_actions.shape)
+
 
             action_is_pad = action_is_pad[:, : self.num_queries]
+            action_is_pad = F.pad(action_is_pad, (0, 4), value=True)  # (12, 60) -> (12, 64), last 4 always masked
+            print("action_is_pad:", action_is_pad.shape)
+            actions_padded = F.pad(processed_actions, (0, 0, 0, 4))  # (12, 60, 20) -> (12, 64, 20)
+            #print("padded actions:", actions_padded.shape)
 
             obs_cond = self.encode_observation(
                 rgb_img_stack,
@@ -599,22 +601,23 @@ class DiffusionPolicy(DVRKPolicy):
                 command_embedding,
                # processed_history,
             )
-            #print("obs_cond shape:", obs_cond.shape)
+            print("obs_cond shape:", obs_cond.shape)
 
-            noise = torch.randn_like(processed_actions)
+            # replace processed_actions with actions_padded
+            noise = torch.randn_like(actions_padded)
             timesteps = torch.randint(
                 0,
                 self.noise_scheduler.config["num_train_timesteps"],
                 (batch_size,),
-                device=processed_actions.device,
+                device=actions_padded.device,
                 dtype=torch.int64,
             )
             noisy_actions = self.noise_scheduler.add_noise(
-                processed_actions,
+                actions_padded,
                 noise,
                 timesteps,
             )
-
+            print("noisy actions shape:", noisy_actions.shape)
 
             noise_pred = self.noise_predictor.forward( # diffusion model outputs noise prediction
                 x=noisy_actions,
