@@ -131,20 +131,17 @@ class DiffusionPolicy(DVRKPolicy):
         encoder = build_encoder(encoder_cfg)
 
         #print(dir(DETRVAE))
-        PolicyFeature( # create policy feature with action feature - unet requires an initialized action feature
-            type=FeatureType.ACTION,
-            shape=(16,)
-        )
+
         diffusion_cfg = DiffusionConfig(
             horizon=64,
             n_action_steps=64,
+            output_features={
+                "action": PolicyFeature(type=FeatureType.ACTION, shape=(action_dim,)) # unet requires an initialized action feature
+            }
         )
-        diffusion_cfg.output_features = {
-            "action": PolicyFeature(
-                type=FeatureType.ACTION,
-                shape=(action_dim,)
-            )
-        }
+        #print("diffusion config:", dir(diffusion_cfg))
+        # print("action dim:", action_dim) # 20
+
 
         print("backbone type: ", img_backbone_cfg.backbone_type)
         '''
@@ -159,7 +156,7 @@ class DiffusionPolicy(DVRKPolicy):
             global_cond_dim=768, # same as obs_cond.shape[1]
         )
         self.noise_scheduler = DDPMScheduler(
-            num_train_timesteps=100,
+            num_train_timesteps=100, # default is 1000
             beta_schedule="squaredcos_cap_v2",
         )
 
@@ -592,6 +589,8 @@ class DiffusionPolicy(DVRKPolicy):
                 current_pose, action, action_is_pad
             )
             processed_actions = processed_actions[:, : self.num_queries]
+            print("processed actions:", processed_actions)
+
             action_is_pad = action_is_pad[:, : self.num_queries]
 
             obs_cond = self.encode_observation(
@@ -617,7 +616,7 @@ class DiffusionPolicy(DVRKPolicy):
             )
 
 
-            noise_pred = self.noise_predictor( # diffusion model outputs noise prediction
+            noise_pred = self.noise_predictor.forward( # diffusion model outputs noise prediction
                 x=noisy_actions,
                 timestep=timesteps,
                 global_cond=obs_cond,
