@@ -1,7 +1,7 @@
 _target_: srth_new.low_level_policy.models.diffusion_model.DiffusionPolicy
 # Hydra will instantiate this class directly.
 
-lr: 1e-5
+lr: 1e-4
 kl_weight: 10
 weight_decay: 1e-4
 camera_names: ["left", "left_wrist", "right_wrist"] # Expected image streams in each sample.
