@@ -68,13 +68,13 @@ class DiffusionTransformerPolicy(DVRKPolicy):
         img_resize_cfg: DictConfig,
         img_backbone_cfg: DictConfig,
         img_aug_cfg: DictConfig,
-        use_depth: bool = True,
-        hidden_dim: int = 256,
-        nheads: int = 8,
-        num_encoder_layers: int = 4,
-        num_decoder_layers: int = 4,
-        dim_feedforward: int = 2048,
-        dropout: float = 0.1,
+        use_depth: bool,
+        hidden_dim: int,
+        nheads: int,
+        num_encoder_layers: int,
+        num_decoder_layers: int,
+        dim_feedforward: int,
+        dropout: float,
         num_train_timesteps: int = 100,
         num_inference_steps: int = 100,
     ):
@@ -381,8 +381,8 @@ class DiffusionTransformerPolicy(DVRKPolicy):
             memory: (B, S_total [+ 1 if language], hidden_dim)
         """
         all_tokens = []
-        first_rgb_feature = None
-        first_rgb_pos = None
+        first_rgb_raw = None  # raw backbone features for camera 0 (before input_proj)
+        first_rgb_pos = None  # backbone positional embeddings for camera 0
 
         for cam_id in range(len(self.camera_names)):
             raw_features, pos = self._forward_backbone(
@@ -390,30 +390,36 @@ class DiffusionTransformerPolicy(DVRKPolicy):
                 rgb_img_stack[:, cam_id],
                 command_embedding,
             )
-            projected = self.input_proj(raw_features)  # (B, hidden_dim, H, W)
+            # raw_features: (B, C_backbone, H, W)
+            # pos:          (B, C_backbone, H, W)
+            # Add pos at backbone channel dim BEFORE projecting to hidden_dim
+            raw_with_pos = raw_features + pos
 
             if cam_id == 0:
-                # Hold the first camera aside for depth fusion
-                first_rgb_feature = projected
+                # Hold aside for depth fusion — keep at backbone dim for now
+                first_rgb_raw = raw_features
                 first_rgb_pos = pos
             else:
-                # Add backbone positional embeddings then flatten to tokens
-                tokens = (projected + pos).flatten(2).permute(0, 2, 1)  # (B, H*W, hidden_dim)
+                projected = self.input_proj(raw_with_pos)  # (B, hidden_dim, H, W)
+                tokens = projected.flatten(2).permute(0, 2, 1)  # (B, H*W, hidden_dim)
                 all_tokens.append(tokens)
 
-        # Fuse depth into the first camera feature map if available
+        # Fuse depth into first camera feature map if available.
+        # Both raw_features and depth_raw are at backbone channel dim, so
+        # input_proj is applied after fusion.
         if depth_img is not None and self.depth_backbone is not None:
             depth_3d = self.depth_1d_to_3d_proj(depth_img)
             depth_raw, _ = self._forward_backbone(
                 self.depth_backbone, depth_3d, command_embedding
             )
+            # Project both to hidden_dim before fusing with modality embeddings
+            first_projected = self.input_proj(first_rgb_raw + first_rgb_pos)  # (B, hidden_dim, H, W)
             depth_projected = self.depth_input_proj(depth_raw)  # (B, hidden_dim, H, W)
-            first_feature = self._fuse_aligned_rgbd(first_rgb_feature, depth_projected)
+            first_feature = self._fuse_aligned_rgbd(first_projected, depth_projected)
         else:
-            first_feature = first_rgb_feature
+            first_feature = self.input_proj(first_rgb_raw + first_rgb_pos)  # (B, hidden_dim, H, W)
 
-        # Flatten first camera (after possible depth fusion)
-        first_tokens = (first_feature + first_rgb_pos).flatten(2).permute(0, 2, 1)
+        first_tokens = first_feature.flatten(2).permute(0, 2, 1)  # (B, H*W, hidden_dim)
         all_tokens.insert(0, first_tokens)
 
         # Concatenate all camera tokens: (B, S_total, hidden_dim)
