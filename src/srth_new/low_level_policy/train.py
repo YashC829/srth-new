@@ -96,6 +96,7 @@ def run_training(
 
         # run training
         for data in train_loader:
+            print("train_loader length:", len(train_loader))
             inputs = utils.collect_data(data, device)
             forward_dict = policy(**inputs)
 
@@ -117,6 +118,7 @@ def run_training(
                     policy.eval()
                     val_batches = 0
                     val_sample_size = min(100, len(val_loader))
+                    print("val loader length:", len(val_loader))
                     for data in val_loader:
                         inputs = utils.collect_data(data, device)
                         forward_dict = policy(**inputs)
