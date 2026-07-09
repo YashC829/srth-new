@@ -1,6 +1,8 @@
 # srth-new
 
-This is a repository created by Grayson Byrd and Jacob Delgado Lopez of the ARCADE lab at The Johns Hopkins University. It builds off of the original SRTH work, also conducted at JHU.
+This repo contains some of my research work at the ARCADE Lab at Johns Hopkins University. I'm currently working there in summer 2026 with PhD students Grayson Byrd and Jacob Delgado Lopez. 
+
+The repo is a fork of their research, which builds off of the original SRTH work, also conducted at JHU. I have added two types of diffusion policies (CNN and transformer), which we will test on the DAVINCI surgical robot.
 
 # Environment Setup
 This environment uses robostack and ros2 for inference. A lot of the ros2 features are not required for inference. We recommend two different environments. One for training and one for inference. The training environment will be more portable and can be run on a cluster somewhere easily. The inference environment will contain all of the ros2 features and is more difficult to install and handle dependencies. This should only be installed on your inference machine.
